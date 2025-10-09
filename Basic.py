@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 from nba_api.stats.endpoints import playergamelog
 from nba_api.stats.static import players
-from sklearn.linear_model import LinearRegression
+#from sklearn.linear_model import LinearRegression
 
 API_KEY = "ODDS_API_KEY"  # Replace with your actual API key
 CACHE_EXPIRY = 60 * 15  # 15 minutes cache
@@ -49,18 +49,18 @@ def best_line(player_prop, odds_data):
 # ------------------ Predictive Modeling ------------------
 
 # Train a basic regression model to predict points based on past games
-def train_model(data):
-    if data is None or data.empty:
-        return None
-    X = data[['MIN']].astype(float)
-    y = data['PTS'].astype(float)
-    model = LinearRegression()
-    model.fit(X, y)
-    return model
+# def train_model(data):
+#     if data is None or data.empty:
+#         return None
+#     X = data[['MIN']].astype(float)
+#     y = data['PTS'].astype(float)
+#     model = LinearRegression()
+#     model.fit(X, y)
+#     return model
 
-# Predict player performance
-def predict_points(model, minutes):
-    return model.predict([[minutes]])[0] if model else "N/A"
+# # Predict player performance
+# def predict_points(model, minutes):
+#     return model.predict([[minutes]])[0] if model else "N/A"
 
 # ------------------ Streamlit Interface ------------------
 
@@ -83,10 +83,10 @@ if player_name in player_id_map:
         st.write(vegas_lines)
 
         # Train model and predict
-        model = train_model(stats_df)
-        predicted_points = predict_points(model, stats_df.iloc[0]['MIN']) if model else "N/A"
+        #model = train_model(stats_df)
+        #predicted_points = predict_points(model, stats_df.iloc[0]['MIN']) if model else "N/A"
 
-        st.write(f"### Predicted Points: {predicted_points}")
+        #st.write(f"### Predicted Points: {predicted_points}")
 
         # Line shopping
         odds_data = {

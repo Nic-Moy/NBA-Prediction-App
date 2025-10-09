@@ -1,0 +1,79 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# IDE - PyCharm / IntelliJ
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# IDE - VS Code
+.vscode/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environment variables and secrets
+.env
+.env.local
+.streamlit/secrets.toml
+
+# API Keys (just to be extra safe)
+*API_KEY*
+secrets.toml
+
+# Data files (if you download large datasets)
+*.csv
+*.json
+*.xlsx
+data/
+datasets/
+
+# Model files (if you save trained models)
+*.pkl
+*.joblib
+*.h5
+models/
+
+# MacOS
+.DS_Store
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Streamlit cache
+.streamlit/cache/
