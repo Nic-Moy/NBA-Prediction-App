@@ -76,10 +76,11 @@ def main():
         return
 
     
-    cleaned_dataframe = isolate_key_stats(raw_stats_dataframe)
-    stats_averages = calculate_averages(cleaned_dataframe, userInputtedPlayer)
+    cleaned_stats_dataframe = isolate_key_stats(raw_stats_dataframe)
+    calculate_averages(cleaned_stats_dataframe, userInputtedPlayer)
 
-    print(stats_averages)
+    print("\n", cleaned_stats_dataframe)
+    
 
     
 main()
