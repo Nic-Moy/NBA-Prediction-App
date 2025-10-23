@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 from nba_api.stats.endpoints import playergamelog
 from nba_api.stats.static import players
+from LinearRegression import forecast_player_stats
 
 
 def find_player_id(name: str):
@@ -13,7 +14,7 @@ def find_player_id(name: str):
         None
 
 
-def get_player_stats(player_id, season='2024-25'):
+def get_player_stats(player_id, season='2025-26'):
     try:
         gamelog = playergamelog.PlayerGameLog(player_id=player_id, season=season)
         df = gamelog.get_data_frames()[0]
@@ -79,9 +80,18 @@ def main():
     cleaned_stats_dataframe = isolate_key_stats(raw_stats_dataframe)
     calculate_averages(cleaned_stats_dataframe, userInputtedPlayer)
 
-    print("\n", cleaned_stats_dataframe)
+    # regression_results = forecast_player_stats(cleaned_stats_dataframe, window=10)
+    # if regression_results:
+    #     print("\nPredicted next game stats (regression)")
+    #     for stat_name, details in regression_results.items():
+    #         predicted_value = details.get("prediction")
+    #         if predicted_value is not None:
+    #             print(f"  {stat_name}: {predicted_value:.1f}")
+    # else:
+    #     print("\nNot enough data to generate regression-based predictions.")
+
+    #print("\n", cleaned_stats_dataframe)
     
 
     
 main()
-
