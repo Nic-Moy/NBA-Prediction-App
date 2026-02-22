@@ -2,9 +2,9 @@ import numpy as np
 import pandas as pd
 import requests
 import matplotlib.pyplot as plt
-from nba_api.stats.endpoints import playergamelog
+from nba_api.stats.endpoints import playergamelog, leaguedashteamstats
 from nba_api.stats.static import players
-from LinearRegression import forecast_player_stats
+from LinearRegression import predict_next_stat
 
 ODDS_API_KEY =  "41d21edd04f753851b4dfd7421a40341"
 
@@ -238,6 +238,180 @@ def compare_game_window_sizes(df):
     return results
 
 
+# //////////////////////////////  Validation Functions  ////////////////////////////////
+
+def create_training_testing_split(df, window=5):
+    """
+    Split dataframe into training and testing sets for time-series validation.
+    Uses walk-forward validation where each test point uses only prior data.
+    
+    Returns:
+    - List of (train_df, test_row) tuples for each prediction
+    """
+    if len(df) < window + 5:
+        print(f"Not enough data. Need at least {window + 5} games, have {len(df)}")
+        return []
+    
+    splits = []
+    
+    # Start predictions after 'window' games
+    for i in range(window, len(df)):
+        # Training data: previous 'window' games
+        train_df = df.iloc[i-window:i].copy()
+        
+        # Test data: current game (what we're trying to predict)
+        test_row = df.iloc[i]
+        
+        splits.append((train_df, test_row))
+    
+    return splits
+
+def rolling_avg_prediction(df, window=5):
+    """
+    Predict next game points using simple rolling average (baseline method).
+    
+    Returns:
+    - predictions: List of predicted points
+    - actuals: List of actual points
+    - errors: List of absolute errors
+    """
+    splits = create_training_testing_split(df, window)
+    
+    if not splits:
+        return None, None, None
+    
+    predictions = []
+    actuals = []
+    errors = []
+    
+    for train_df, test_row in splits:
+        # Baseline prediction: simple average of training window
+        predicted_pts = train_df['PTS'].mean()
+        actual_pts = test_row['PTS']
+        error = abs(predicted_pts - actual_pts)
+        
+        predictions.append(predicted_pts)
+        actuals.append(actual_pts)
+        errors.append(error)
+    
+    return predictions, actuals, errors
+
+def regression_prediction(df, window=10, model_type='linear'):
+    """
+    Predict next game points using regression model with multiple features.
+    
+    Returns:
+    - predictions: List of predicted points
+    - actuals: List of actual points
+    - errors: List of absolute errors
+    """
+    
+    splits = create_training_testing_split(df, window)
+    
+    if not splits:
+        return None, None, None
+    
+    predictions = []
+    actuals = []
+    errors = []
+    
+    # Define features to use for prediction
+    feature_columns = ['MIN', 'FG_PCT', 'FG3_PCT', 'AST']
+    
+    for train_df, test_row in splits:
+        try:
+            # Use LinearRegression module to predict points
+            predicted_pts, model = predict_next_stat(
+                train_df,
+                feature_columns=feature_columns,
+                target_column='PTS',
+                model_type=model_type,
+                alpha=1.0,
+                window=None  # Already using windowed data from splits
+            )
+            
+            actual_pts = test_row['PTS']
+            error = abs(predicted_pts - actual_pts)
+            
+            predictions.append(predicted_pts)
+            actuals.append(actual_pts)
+            errors.append(error)
+            
+        except (ValueError, KeyError) as e:
+            # Skip predictions where data is insufficient or features missing
+            continue
+    
+    return predictions, actuals, errors
+
+def evaluate_predictions(actual, prediction, method_name="Model"):
+    """
+    Evaluate prediction accuracy using multiple metrics.
+    
+    Parameters:
+    - actual: List of actual point values
+    - prediction: List of predicted point values
+    - method_name: Name of prediction method (for display)
+    
+    Returns:
+    - Dictionary of evaluation metrics
+    """
+    if not actual or not prediction or len(actual) != len(prediction):
+        print(f"Cannot evaluate {method_name}: Invalid data")
+        return None
+    
+    actual = np.array(actual)
+    prediction = np.array(prediction)
+    
+    # Calculate metrics
+    errors = np.abs(actual - prediction)
+    mae = np.mean(errors)  # Mean Absolute Error
+    rmse = np.sqrt(np.mean((actual - prediction) ** 2))  # Root Mean Squared Error
+    
+    # Accuracy within certain thresholds
+    within_3pts = np.sum(errors <= 3) / len(errors) * 100
+    within_5pts = np.sum(errors <= 5) / len(errors) * 100
+    within_7pts = np.sum(errors <= 7) / len(errors) * 100
+    
+    # Average actual vs predicted
+    avg_actual = np.mean(actual)
+    avg_predicted = np.mean(prediction)
+    bias = avg_predicted - avg_actual
+    
+    metrics = {
+        'mae': mae,
+        'rmse': rmse,
+        'within_3pts': within_3pts,
+        'within_5pts': within_5pts,
+        'within_7pts': within_7pts,
+        'avg_actual': avg_actual,
+        'avg_predicted': avg_predicted,
+        'bias': bias,
+        'n_predictions': len(actual)
+    }
+    
+    # Display results
+    print(f"\n{'='*60}")
+    print(f"{method_name.upper()} EVALUATION")
+    print(f"{'='*60}")
+    print(f"Predictions Made: {metrics['n_predictions']}")
+    print(f"\nAccuracy Metrics:")
+    print(f"  Mean Absolute Error (MAE):  {mae:.2f} points")
+    print(f"  Root Mean Squared Error:    {rmse:.2f} points")
+    print(f"\nPrediction Accuracy:")
+    print(f"  Within ±3 points: {within_3pts:.1f}%")
+    print(f"  Within ±5 points: {within_5pts:.1f}%")
+    print(f"  Within ±7 points: {within_7pts:.1f}%")
+    print(f"\nBias Analysis:")
+    print(f"  Average Actual Points:    {avg_actual:.1f}")
+    print(f"  Average Predicted Points: {avg_predicted:.1f}")
+    print(f"  Bias (over/under):        {bias:+.1f} points")
+    
+    if abs(bias) > 2:
+        direction = "overestimating" if bias > 0 else "underestimating"
+        print(f"  ⚠️  Model is {direction} by {abs(bias):.1f} points on average")
+    
+    return metrics
+
 
 # ////////////////////////////  Main Function  ////////////////////////////////
 def main():
@@ -259,12 +433,37 @@ def main():
     calculate_and_display_averages(cleaned_stats_dataframe, userInputtedPlayer)
     print()
 
-    # New functions
+    # New exploratory analysis functions
     analyze_correlations(cleaned_stats_dataframe)
     print()
     plot_relationships(cleaned_stats_dataframe, userInputtedPlayer)
     print()
     compare_game_window_sizes(cleaned_stats_dataframe)
+
+    # New Validation functions
+    # Baseline: Rolling Average
+    print("\n" + "="*60)
+    print("VALIDATION: BASELINE VS ML MODEL")
+    print("="*60)
+
+    # pred_avg, actual_avg, err_avg = rolling_avg_prediction(cleaned_stats_dataframe, window=7)
+    # metrics_baseline = evaluate_predictions(actual_avg, pred_avg, "Rolling Average (7-game)")
+
+    # # ML Model: Regression
+    # pred_ml, actual_ml, err_ml = regression_prediction(cleaned_stats_dataframe, window=7, model_type='linear')
+    # metrics_ml = evaluate_predictions(actual_ml, pred_ml, "Linear Regression (10-game)")
+
+    # # Comparison
+    # if metrics_baseline and metrics_ml:
+    #     improvement = ((metrics_baseline['mae'] - metrics_ml['mae']) / metrics_baseline['mae']) * 100
+    #     print(f"\n{'='*60}")
+    #     print(f"ML IMPROVEMENT: {improvement:+.1f}%")
+    #     if improvement > 0:
+    #         print(f"✅ ML model is {improvement:.1f}% more accurate!")
+    #     else:
+    #         print(f"❌ ML model is {abs(improvement):.1f}% worse than baseline")
+    #     print(f"{'='*60}")
+
 
     
 main()
