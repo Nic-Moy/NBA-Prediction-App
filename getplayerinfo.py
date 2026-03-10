@@ -10,10 +10,12 @@ This module is intentionally focused on nba_api player data only:
 from __future__ import annotations
 
 import argparse
+import time
 import numpy as np
 import pandas as pd
-from nba_api.stats.endpoints import playergamelog
-from nba_api.stats.static import players
+from nba_api.stats.endpoints import playergamelog, commonteamroster
+from nba_api.stats.static import players, teams as nba_teams
+from database import ensure_tables, cache_player, cache_team, update_player_team_position
 
 
 DEFAULT_SEASON = "2025-26"
@@ -32,9 +34,11 @@ def find_player_id(name: str) -> int | None:
 def get_player_stats(player_id: int, season: str = DEFAULT_SEASON) -> pd.DataFrame | None:
     """Fetch raw game logs for a player from nba_api."""
     try:
-        game_log = playergamelog.PlayerGameLog(player_id=player_id, season=season)
+        time.sleep(.6)
+        game_log = playergamelog.PlayerGameLog(player_id=player_id, season=season, timeout=10)
         return game_log.get_data_frames()[0]
-    except Exception:
+    except Exception as e:
+        print(f"Error fetching data: {e}")
         return None
 
 
@@ -64,6 +68,62 @@ def clean_player_games(raw_df: pd.DataFrame) -> pd.DataFrame:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
     return df
+
+
+def load_all_players_to_db(active_only: bool = True) -> int:
+    """Fetch all NBA players from nba_api static data and upsert into the players table.
+
+    Returns the number of players loaded.
+    """
+    ensure_tables()
+    player_list = players.get_active_players() if active_only else players.get_players()
+    for p in player_list:
+        cache_player(
+            player_id=p["id"],
+            full_name=p["full_name"],
+            is_active=p["is_active"],
+        )
+    return len(player_list)
+
+
+def load_all_teams_to_db() -> int:
+    """Load all 30 NBA teams into the teams table. Returns count loaded."""
+    ensure_tables()
+    team_list = nba_teams.get_teams()
+    for t in team_list:
+        cache_team(
+            team_id=t["id"],
+            full_name=t["full_name"],
+            abbreviation=t["abbreviation"],
+            city=t["city"],
+            nickname=t["nickname"],
+        )
+    return len(team_list)
+
+
+def backfill_player_team_and_position() -> int:
+    """Fetch each team's roster and update team_id + position for all players.
+
+    Makes 30 API calls (one per team) rather than one per player.
+    Returns total player rows updated.
+    """
+    team_list = nba_teams.get_teams()
+    total = 0
+    for t in team_list:
+        time.sleep(0.6)
+        try:
+            roster = commonteamroster.CommonTeamRoster(team_id=t["id"], timeout=10)
+            df = roster.get_data_frames()[0]
+            for _, row in df.iterrows():
+                update_player_team_position(
+                    player_id=int(row["PLAYER_ID"]),
+                    team_id=t["id"],
+                    position=str(row.get("POSITION", "") or ""),
+                )
+                total += 1
+        except Exception as e:
+            print(f"  Warning: could not fetch roster for {t['full_name']}: {e}")
+    return total
 
 
 def _build_cli_parser() -> argparse.ArgumentParser:
