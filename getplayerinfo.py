@@ -9,6 +9,7 @@ This module is intentionally focused on nba_api player data only:
 
 from __future__ import annotations
 
+import argparse
 import numpy as np
 import pandas as pd
 from nba_api.stats.endpoints import playergamelog
@@ -21,9 +22,11 @@ DEFAULT_SEASON = "2025-26"
 def find_player_id(name: str) -> int | None:
     """Resolve a player full name to NBA player ID."""
     matches = players.find_players_by_full_name(name)
-    if not matches:
+    name_lower = name.strip().lower()
+    exact = [p for p in matches if p["full_name"].lower() == name_lower]
+    if not exact:
         return None
-    return matches[0]["id"]
+    return exact[0]["id"]
 
 
 def get_player_stats(player_id: int, season: str = DEFAULT_SEASON) -> pd.DataFrame | None:
@@ -61,3 +64,67 @@ def clean_player_games(raw_df: pd.DataFrame) -> pd.DataFrame:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
     return df
+
+
+def _build_cli_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Fetch and preview NBA player game logs from nba_api."
+    )
+    parser.add_argument("--player", help="Player full name (example: Stephen Curry)")
+    parser.add_argument(
+        "--season",
+        default=DEFAULT_SEASON,
+        help=f"NBA season string (default: {DEFAULT_SEASON})",
+    )
+    parser.add_argument(
+        "--rows",
+        type=int,
+        default=10,
+        help="How many recent cleaned rows to display (default: 10)",
+    )
+    return parser
+
+
+def main() -> None:
+    parser = _build_cli_parser()
+    args = parser.parse_args()
+    valid_player = False
+
+    while valid_player != True:
+        player_name = args.player or input("Enter player name (ex: Stephen Curry): ").strip()
+        season = args.season
+    
+        if not player_name:
+            print("No player name provided. Please try again")
+            continue
+
+        player_id = find_player_id(player_name)
+        if player_id is None:
+            print(f"Player '{player_name}' not found. Please try again")
+            continue
+
+            
+
+        valid_player = True
+
+    print(f"Resolved player ID: {player_id}")
+    print(f"Fetching season: {season}")
+
+    raw_df = get_player_stats(player_id, season=season)
+    if raw_df is None or raw_df.empty:
+        print("No game log data returned.")
+        print("Check the season format or nba_api connectivity.")
+        return
+
+    cleaned_df = clean_player_games(raw_df)
+
+    print(f"\nTotal games fetched: {len(cleaned_df)}")
+    print(f"Date range: {cleaned_df['GAME_DATE'].min().date()} to {cleaned_df['GAME_DATE'].max().date()}")
+    print("\nRecent cleaned rows:")
+    print(
+        cleaned_df.tail(max(1, args.rows)).to_string(index=False)
+    )
+
+
+if __name__ == "__main__":
+    main()
