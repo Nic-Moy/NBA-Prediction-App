@@ -101,28 +101,38 @@ def load_all_teams_to_db() -> int:
     return len(team_list)
 
 
-def backfill_player_team_and_position() -> int:
+def backfill_player_team_and_position(max_retries: int = 3) -> int:
     """Fetch each team's roster and update team_id + position for all players.
 
     Makes 30 API calls (one per team) rather than one per player.
+    Retries up to max_retries times on timeout before skipping a team.
     Returns total player rows updated.
     """
     team_list = nba_teams.get_teams()
     total = 0
     for t in team_list:
-        time.sleep(0.6)
-        try:
-            roster = commonteamroster.CommonTeamRoster(team_id=t["id"], timeout=10)
-            df = roster.get_data_frames()[0]
-            for _, row in df.iterrows():
-                update_player_team_position(
-                    player_id=int(row["PLAYER_ID"]),
-                    team_id=t["id"],
-                    position=str(row.get("POSITION", "") or ""),
-                )
-                total += 1
-        except Exception as e:
-            print(f"  Warning: could not fetch roster for {t['full_name']}: {e}")
+        time.sleep(1.0)
+        df = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                roster = commonteamroster.CommonTeamRoster(team_id=t["id"], timeout=30)
+                df = roster.get_data_frames()[0]
+                break
+            except Exception as e:
+                print(f"  Attempt {attempt}/{max_retries} failed for {t['full_name']}: {e or type(e).__name__}")
+                if attempt < max_retries:
+                    time.sleep(2.0 * attempt)
+        if df is None:
+            print(f"  Skipping {t['full_name']} after {max_retries} failed attempts.")
+            continue
+        for _, row in df.iterrows():
+            update_player_team_position(
+                player_id=int(row["PLAYER_ID"]),
+                team_id=t["id"],
+                position=str(row.get("POSITION", "") or ""),
+            )
+            total += 1
+        print(f"  ✓ {t['full_name']}: {len(df)} players updated")
     return total
 
 
