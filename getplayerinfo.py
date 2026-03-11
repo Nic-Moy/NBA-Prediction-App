@@ -7,15 +7,14 @@ This module is intentionally focused on nba_api player data only:
 - clean game logs into modeling-friendly columns
 """
 
-from __future__ import annotations
 
 import argparse
 import time
 import numpy as np
 import pandas as pd
-from nba_api.stats.endpoints import playergamelog, commonteamroster
+from nba_api.stats.endpoints import playergamelog, commonteamroster, leaguegamelog
 from nba_api.stats.static import players, teams as nba_teams
-from database import ensure_tables, cache_player, cache_team, update_player_team_position
+from database import ensure_tables, cache_player, cache_team, get_all_player_ids, upsert_game_logs, upsert_game_logs_bulk, is_cache_frsh
 
 
 DEFAULT_SEASON = "2025-26"
@@ -101,38 +100,64 @@ def load_all_teams_to_db() -> int:
     return len(team_list)
 
 
-def backfill_player_team_and_position(max_retries: int = 3) -> int:
-    """Fetch each team's roster and update team_id + position for all players.
+def load_player_game_logs(player_name: str, season: str = DEFAULT_SEASON, max_retries: int = 3) -> int:
+    """Fetch and store game logs for a single player by name.
 
-    Makes 30 API calls (one per team) rather than one per player.
-    Retries up to max_retries times on timeout before skipping a team.
-    Returns total player rows updated.
+    Validates the player name, resolves it to an ID, fetches their game logs,
+    and upserts them into the database. Returns the number of rows upserted.
+    Raises ValueError for invalid or unrecognized player names.
     """
-    team_list = nba_teams.get_teams()
-    total = 0
-    for t in team_list:
-        time.sleep(1.0)
-        df = None
-        for attempt in range(1, max_retries + 1):
-            try:
-                roster = commonteamroster.CommonTeamRoster(team_id=t["id"], timeout=30)
-                df = roster.get_data_frames()[0]
-                break
-            except Exception as e:
-                print(f"  Attempt {attempt}/{max_retries} failed for {t['full_name']}: {e or type(e).__name__}")
-                if attempt < max_retries:
-                    time.sleep(2.0 * attempt)
-        if df is None:
-            print(f"  Skipping {t['full_name']} after {max_retries} failed attempts.")
-            continue
-        for _, row in df.iterrows():
-            update_player_team_position(
-                player_id=int(row["PLAYER_ID"]),
-                team_id=t["id"],
-                position=str(row.get("POSITION", "") or ""),
-            )
-            total += 1
-        print(f"  ✓ {t['full_name']}: {len(df)} players updated")
+    if not player_name or not player_name.strip():
+        raise ValueError("Player name cannot be empty.")
+
+    player_name = player_name.strip()
+    player_id = find_player_id(player_name)
+    if player_id is None:
+        raise ValueError(f"Player '{player_name}' not found. Check spelling and try again.")
+
+    ensure_tables()
+    print(f"  Fetching game logs for {player_name} (ID: {player_id}, season: {season})...")
+
+    raw_df = None
+    for attempt in range(1, max_retries + 1):
+        time.sleep(0.6)
+        try:
+            raw_df = get_player_stats(player_id, season=season)
+            break
+        except Exception as e:
+            print(f"    Attempt {attempt}/{max_retries} failed: {e or type(e).__name__}")
+            if attempt < max_retries:
+                time.sleep(2.0 * attempt)
+
+    if raw_df is None or raw_df.empty:
+        print(f"  No game log data found for {player_name} in {season}.")
+        return 0
+
+    rows = upsert_game_logs(raw_df, player_id, season)
+    print(f"  Done. {rows} rows upserted for {player_name}.")
+    return rows
+
+
+def load_all_game_logs_bulk(season: str = DEFAULT_SEASON) -> int:
+    """Fetch all player game logs for a season in one API call via LeagueGameLog.
+
+    Replaces the per-player loop in load_all_game_logs() — runs in seconds
+    instead of 30+ minutes with zero per-player failures.
+    """
+    ensure_tables()
+    print(f"  Fetching all player game logs for {season} via LeagueGameLog...")
+    time.sleep(0.6)
+    log = leaguegamelog.LeagueGameLog(
+        season=season,
+        player_or_team_abbreviation="P",
+        timeout=60,
+    )
+    df = log.get_data_frames()[0]
+    if df.empty:
+        print("  No data returned from LeagueGameLog.")
+        return 0
+    total = upsert_game_logs_bulk(df, season)
+    print(f"\nDone. {total} rows upserted via bulk load.")
     return total
 
 

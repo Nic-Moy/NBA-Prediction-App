@@ -348,6 +348,78 @@ def is_cache_fresh(player_id: int, season: str, max_age_hours: float = 20.0,
     return last_fetch >= cutoff
 
 
+# ─── Player ID list ──────────────────────────────────────────
+
+def get_all_player_ids() -> list[int]:
+    """Return all player_ids currently in the players table."""
+    sql = text("SELECT player_id FROM players ORDER BY player_id;")
+    with get_engine().begin() as conn:
+        rows = conn.execute(sql).fetchall()
+    return [r[0] for r in rows]
+
+
+# ─── Bulk game log upsert (LeagueGameLog) ────────────────────
+
+_BULK_LOG_COLS_MAP = {
+    "PLAYER_ID":  "player_id",
+    "GAME_ID":    "game_id",
+    "GAME_DATE":  "game_date",
+    "MATCHUP":    "matchup",
+    "WL":         "wl",
+    "MIN":        "min",
+    "PTS":        "pts",
+    "REB":        "reb",
+    "AST":        "ast",
+    "FGM":        "fgm",
+    "FGA":        "fga",
+    "FG3M":       "fg3m",
+    "FG3A":       "fg3a",
+    "FTM":        "ftm",
+    "FTA":        "fta",
+    "STL":        "stl",
+    "BLK":        "blk",
+    "TOV":        "tov",
+    "PLUS_MINUS": "plus_minus",
+}
+
+_NUMERIC_COLS = {
+    "pts", "reb", "ast", "fgm", "fga", "fg3m", "fg3a",
+    "ftm", "fta", "stl", "blk", "tov", "plus_minus",
+}
+
+
+def upsert_game_logs_bulk(df: pd.DataFrame, season: str) -> int:
+    """
+    Upsert all rows from a LeagueGameLog DataFrame (all players, one season).
+    PLAYER_ID is read from the DataFrame itself.
+    Returns total rows upserted.
+    """
+    if df.empty:
+        return 0
+
+    rows = []
+    for _, row in df.iterrows():
+        record = {"season": season}
+        for api_col, db_col in _BULK_LOG_COLS_MAP.items():
+            val = row.get(api_col)
+            if db_col == "min":
+                val = _minutes_to_float(val)
+            elif db_col == "game_date":
+                val = pd.to_datetime(val).date() if pd.notna(val) else None
+            elif db_col == "player_id":
+                val = int(val) if pd.notna(val) else None
+            elif db_col in _NUMERIC_COLS:
+                val = float(val) if pd.notna(val) else None
+            record[db_col] = val
+        rows.append(record)
+
+    with get_engine().begin() as conn:
+        conn.execute(_UPSERT_SQL, rows)
+
+    print(f"✓ Bulk upserted {len(rows)} game log rows ({season})")
+    return len(rows)
+
+
 # ─── Quick sanity test ────────────────────────────────────────
 
 if __name__ == "__main__":
