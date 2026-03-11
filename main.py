@@ -1,23 +1,43 @@
-from getplayerinfo import (
-    load_all_players_to_db,
-    load_all_teams_to_db,
-    backfill_player_team_and_position,
-    load_all_game_logs,
+from getplayerinfo import find_player_id, clean_player_games, DEFAULT_SEASON
+from database import load_cached_logs
+from model import (
+    build_features,
+    walk_forward_backtest,
+    print_player_summary,
+    print_feature_preview,
+    evaluate_results,
+    DEFAULT_LOOKBACK_GAMES,
 )
 
 if __name__ == "__main__":
-    print("Loading players...")
-    count = load_all_players_to_db(active_only=True)
-    print(f"  {count} players loaded.\n")
+    print("NBA Player Props — Model")
 
-    print("Loading teams...")
-    count = load_all_teams_to_db()
-    print(f"  {count} teams loaded.\n")
+    # Resolve player with validation loop
+    player_id = None
+    player_name = ""
+    while player_id is None:
+        player_name = input("Enter player name (ex: Stephen Curry): ").strip()
+        if not player_name:
+            print("Player name cannot be empty.")
+            continue
+        player_id = find_player_id(player_name)
+        if player_id is None:
+            print(f"Player '{player_name}' not found. Check spelling and try again.")
 
-    print("Backfilling player team_id and position...")
-    count = backfill_player_team_and_position()
-    print(f"  {count} player rows updated.\n")
+    season_input = input(f"Enter season [{DEFAULT_SEASON}]: ").strip()
+    season = season_input or DEFAULT_SEASON
 
-    print("Loading game logs for all players (this takes ~5-10 min)...")
-    count = load_all_game_logs()
-    print(f"  {count} total game log rows upserted.")
+    raw_df = load_cached_logs(player_id, season)
+    if raw_df.empty:
+        print(f"\nNo cached game logs for {player_name} ({season}).")
+        print("Run setup.py first to load game logs into the database.")
+        raise SystemExit(1)
+
+    clean_df = clean_player_games(raw_df)
+    feature_df = build_features(clean_df)
+
+    print_player_summary(clean_df, player_name)
+    print_feature_preview(feature_df)
+
+    results_df = walk_forward_backtest(feature_df, lookback_games=DEFAULT_LOOKBACK_GAMES)
+    evaluate_results(results_df)

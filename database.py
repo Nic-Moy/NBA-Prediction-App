@@ -11,7 +11,6 @@ Provides:
 - lookup_player_id()  → resolve name → id from local cache
 """
 
-from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta, timezone
