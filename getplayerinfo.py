@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 from nba_api.stats.endpoints import playergamelog, commonteamroster, leaguegamelog
 from nba_api.stats.static import players, teams as nba_teams
-from database import ensure_tables, cache_player, cache_team, get_all_player_ids, upsert_game_logs, is_cache_fresh
+from database import ensure_tables, cache_player, cache_team, get_all_player_ids, upsert_game_logs, is_cache_fresh, upsert_game_logs_bulk
 
 
 DEFAULT_SEASON = "2025-26"
