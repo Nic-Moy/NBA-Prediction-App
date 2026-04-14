@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegression, Ridge
 from getplayerinfo import (
     DEFAULT_SEASON as PLAYERINFO_DEFAULT_SEASON,
     clean_player_games,
@@ -208,6 +208,141 @@ def evaluate_results(results_df: pd.DataFrame) -> None:
     recent["actual_pts"] = recent["actual_pts"].round(1)
     recent["line_proxy_pts"] = recent["line_proxy_pts"].round(1)
     print(recent.to_string(index=False))
+
+
+def walk_forward_regression(
+    df: pd.DataFrame,
+    stat_col: str = "PTS",
+    lookback_games: int = DEFAULT_LOOKBACK_GAMES,
+) -> pd.DataFrame:
+    """
+    Walk-forward regression backtest: predict actual stat value for each game.
+
+    For each test game, trains Ridge regression on the previous N games only,
+    then predicts the actual stat value (e.g. points scored).
+
+    stat_col should be an uppercase column name: "PTS", "REB", or "AST".
+    """
+    results: list[dict] = []
+
+    for i in range(lookback_games, len(df)):
+        train_window = df.iloc[i - lookback_games : i].copy()
+        test_row = df.iloc[i]
+
+        train_model_df = train_window[FEATURE_COLUMNS + [stat_col]].dropna()
+        if len(train_model_df) < 8:
+            continue
+
+        X_train = train_model_df[FEATURE_COLUMNS]
+        y_train = train_model_df[stat_col]
+
+        X_test = test_row[FEATURE_COLUMNS]
+        if X_test.isna().any():
+            continue
+        X_test = X_test.to_frame().T
+
+        model = Ridge(alpha=1.0)
+        model.fit(X_train, y_train)
+        predicted = float(model.predict(X_test)[0])
+        actual = float(test_row[stat_col])
+
+        results.append({
+            "game_date": test_row["GAME_DATE"],
+            "matchup":   test_row["MATCHUP"],
+            "actual":    round(actual, 1),
+            "predicted": round(predicted, 1),
+            "error":     round(actual - predicted, 1),
+        })
+
+    return pd.DataFrame(results)
+
+
+def evaluate_regression_results(results_df: pd.DataFrame, stat_col: str = "PTS") -> None:
+    """Print regression backtest metrics: MAE, within-N accuracy, and bias."""
+    print(f"\n{'=' * 60}")
+    print(f"REGRESSION BACKTEST — {stat_col}")
+    print(f"{'=' * 60}")
+
+    if results_df.empty:
+        print("No predictions generated. Player may have too few games.")
+        return
+
+    mae = float(results_df["error"].abs().mean())
+    bias = float(results_df["error"].mean())
+    within_2_5 = float((results_df["error"].abs() <= 2.5).mean())
+    within_5 = float((results_df["error"].abs() <= 5.0).mean())
+
+    print(f"Predictions made: {len(results_df)}")
+    print(f"MAE:              {mae:.1f} pts")
+    print(f"Within ±2.5:      {within_2_5:.1%}")
+    print(f"Within ±5.0:      {within_5:.1%}")
+    bias_dir = "undershoots" if bias > 0 else "overshoots"
+    print(f"Bias:             {bias:+.1f}  (model {bias_dir} actual)")
+
+    print("\nMost recent predictions (last 10):")
+    recent = results_df.tail(10).copy()
+    recent["game_date"] = pd.to_datetime(recent["game_date"]).dt.date
+    print(recent[["game_date", "matchup", "actual", "predicted", "error"]].to_string(index=False))
+
+
+def predict_next_game(
+    df: pd.DataFrame,
+    stat_col: str = "PTS",
+    lookback_games: int = DEFAULT_LOOKBACK_GAMES,
+) -> dict:
+    """
+    Train on the last N games and predict the next unplayed game's stat value.
+
+    Called at inference time — run this before a game, then compare the returned
+    prediction to the real PrizePicks line to get an Over/Under recommendation.
+
+    Returns:
+        {"predicted": float, "margin_of_error": float}
+        where margin_of_error is ±1 std dev of training residuals.
+        Returns {"predicted": None, "margin_of_error": None} if data is insufficient.
+    """
+    train_df = df[FEATURE_COLUMNS + [stat_col]].dropna().tail(lookback_games)
+    if len(train_df) < 8:
+        return {"predicted": None, "margin_of_error": None}
+
+    X_train = train_df[FEATURE_COLUMNS]
+    y_train = train_df[stat_col]
+
+    model = Ridge(alpha=1.0)
+    model.fit(X_train, y_train)
+
+    # Margin of error = ±1 std dev of training residuals
+    residuals = y_train.values - model.predict(X_train)
+    margin_of_error = round(float(np.std(residuals)), 1)
+
+    # Build next-game feature vector from most recent completed games.
+    # is_home is unknown before seeing the schedule, so use 0.5 (neutral).
+    last_game_date = df["GAME_DATE"].iloc[-1]
+    days_since_last = (pd.Timestamp.now().normalize() - pd.Timestamp(last_game_date)).days
+
+    if days_since_last > 7:
+        # Data is likely stale — clamp to typical in-season rest to avoid
+        # extrapolation error. User should run setup.py to refresh.
+        print(f"  Warning: last cached game was {days_since_last} days ago.")
+        print("  Run setup.py to refresh game logs for a more accurate prediction.")
+        rest_days = 2.0  # typical back-to-back/short rest default
+    else:
+        rest_days = float(max(0, days_since_last))
+
+    next_features = {
+        "is_home":   0.5,
+        "rest_days": rest_days,
+        "pts_avg_3": float(df["PTS"].tail(3).mean()),
+        "pts_avg_5": float(df["PTS"].tail(5).mean()),
+        "reb_avg_3": float(df["REB"].tail(3).mean()),
+        "ast_avg_3": float(df["AST"].tail(3).mean()),
+        "min_avg_3": float(df["MIN"].tail(3).mean()),
+    }
+
+    X_next = pd.DataFrame([next_features])[FEATURE_COLUMNS]
+    predicted = round(float(model.predict(X_next)[0]), 1)
+
+    return {"predicted": predicted, "margin_of_error": margin_of_error}
 
 
 def main() -> None:

@@ -1,9 +1,6 @@
 """
 Fetch player prop lines from PrizePicks for any sport.
 
-PrizePicks is a DFS platform that publishes player projections (Over/Under lines)
-across many sports. Their API is publicly accessible with no API key required.
-
 NBA stat aliases:
     pts  -> Points
     reb  -> Rebounds
