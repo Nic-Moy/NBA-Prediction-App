@@ -7,6 +7,7 @@ Run with:
 
 import datetime
 import streamlit as st
+import pandas as pd
 from getprizepicks import fetch_projections, parse_projections, LEAGUES, NBA_DEFAULT_STATS
 
 st.set_page_config(page_title="PrizePicks Props", layout="wide")
