@@ -18,6 +18,7 @@ from database import ensure_tables, cache_player, cache_team, get_all_player_ids
 
 
 DEFAULT_SEASON = "2025-26"
+DEFAULT_SEASON_PHASES = ("Regular Season", "PlayIn", "Playoffs")
 
 
 def find_player_id(name: str) -> int | None:
@@ -30,11 +31,20 @@ def find_player_id(name: str) -> int | None:
     return exact[0]["id"]
 
 
-def get_player_stats(player_id: int, season: str = DEFAULT_SEASON) -> pd.DataFrame | None:
+def get_player_stats(
+    player_id: int,
+    season: str = DEFAULT_SEASON,
+    season_type: str = "Regular Season",
+) -> pd.DataFrame | None:
     """Fetch raw game logs for a player from nba_api."""
     try:
         time.sleep(.6)
-        game_log = playergamelog.PlayerGameLog(player_id=player_id, season=season, timeout=10)
+        game_log = playergamelog.PlayerGameLog(
+            player_id=player_id,
+            season=season,
+            season_type_all_star=season_type,
+            timeout=10,
+        )
         return game_log.get_data_frames()[0]
     except Exception as e:
         print(f"Error fetching data: {e}")
@@ -118,46 +128,65 @@ def load_player_game_logs(player_name: str, season: str = DEFAULT_SEASON, max_re
     ensure_tables()
     print(f"  Fetching game logs for {player_name} (ID: {player_id}, season: {season})...")
 
-    raw_df = None
-    for attempt in range(1, max_retries + 1):
-        time.sleep(0.6)
-        try:
-            raw_df = get_player_stats(player_id, season=season)
-            break
-        except Exception as e:
-            print(f"    Attempt {attempt}/{max_retries} failed: {e or type(e).__name__}")
-            if attempt < max_retries:
-                time.sleep(2.0 * attempt)
+    phase_frames: list[pd.DataFrame] = []
+    for phase in DEFAULT_SEASON_PHASES:
+        print(f"    Pulling phase: {phase}")
+        raw_df = None
+        for attempt in range(1, max_retries + 1):
+            time.sleep(0.6)
+            try:
+                raw_df = get_player_stats(player_id, season=season, season_type=phase)
+                break
+            except Exception as e:
+                print(f"    Attempt {attempt}/{max_retries} failed: {e or type(e).__name__}")
+                if attempt < max_retries:
+                    time.sleep(2.0 * attempt)
 
-    if raw_df is None or raw_df.empty:
+        if raw_df is not None and not raw_df.empty:
+            phase_frames.append(raw_df)
+        else:
+            print(f"    No rows returned for phase: {phase}")
+
+    if not phase_frames:
         print(f"  No game log data found for {player_name} in {season}.")
         return 0
 
-    rows = upsert_game_logs(raw_df, player_id, season)
+    combined_df = pd.concat(phase_frames, ignore_index=True)
+    rows = upsert_game_logs(combined_df, player_id, season)
     print(f"  Done. {rows} rows upserted for {player_name}.")
     return rows
 
 
 def load_all_game_logs_bulk(season: str = DEFAULT_SEASON) -> int:
-    """Fetch all player game logs for a season in one API call via LeagueGameLog.
+    """Fetch all player game logs for a season across all phases via LeagueGameLog.
 
-    Replaces the per-player loop in load_all_game_logs() — runs in seconds
-    instead of 30+ minutes with zero per-player failures.
+    Pulls Regular Season + PlayIn + Playoffs, then upserts combined results.
     """
     ensure_tables()
-    print(f"  Fetching all player game logs for {season} via LeagueGameLog...")
-    time.sleep(0.6)
-    log = leaguegamelog.LeagueGameLog(
-        season=season,
-        player_or_team_abbreviation="P",
-        timeout=60,
-    )
-    df = log.get_data_frames()[0]
-    if df.empty:
-        print("  No data returned from LeagueGameLog.")
+    phase_frames: list[pd.DataFrame] = []
+
+    for phase in DEFAULT_SEASON_PHASES:
+        print(f"  Fetching all player game logs for {season} ({phase}) via LeagueGameLog...")
+        time.sleep(0.6)
+        log = leaguegamelog.LeagueGameLog(
+            season=season,
+            season_type_all_star=phase,
+            player_or_team_abbreviation="P",
+            timeout=60,
+        )
+        df = log.get_data_frames()[0]
+        if df.empty:
+            print(f"    No data returned for phase: {phase}")
+            continue
+        phase_frames.append(df)
+
+    if not phase_frames:
+        print("  No data returned from LeagueGameLog for any phase.")
         return 0
-    total = upsert_game_logs_bulk(df, season)
-    print(f"\nDone. {total} rows upserted via bulk load.")
+
+    combined_df = pd.concat(phase_frames, ignore_index=True)
+    total = upsert_game_logs_bulk(combined_df, season)
+    print(f"\nDone. {total} rows upserted via bulk load ({', '.join(DEFAULT_SEASON_PHASES)}).")
     return total
 
 
