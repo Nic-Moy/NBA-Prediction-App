@@ -1,4 +1,5 @@
 from getplayerinfo import (load_all_players_to_db, load_all_teams_to_db, load_all_game_logs_bulk, load_player_game_logs)
+from team_stats import fetch_and_cache_team_stats
 
 def load_all_data_to_db(userchoice: int):
     print("Loading players...")
@@ -8,6 +9,10 @@ def load_all_data_to_db(userchoice: int):
     print("Loading teams...")
     count = load_all_teams_to_db()
     print(f"  {count} teams loaded to teams table.")
+
+    print("Loading team advanced stats...")
+    count = fetch_and_cache_team_stats()
+    print(f"  {count} team advanced stat rows upserted.")
 
     if userchoice == 1:
         print("Loading game logs for all players (bulk, ~seconds)...")

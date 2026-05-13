@@ -105,6 +105,21 @@ ALTER TABLE players ADD COLUMN IF NOT EXISTS team_id  INTEGER;
 ALTER TABLE players ADD COLUMN IF NOT EXISTS position VARCHAR(10);
 """
 
+_CREATE_TEAM_ADV = """
+CREATE TABLE IF NOT EXISTS team_advanced_stats (
+    team_id      INTEGER     NOT NULL,
+    season       VARCHAR(10) NOT NULL,
+    games_played INTEGER,
+    off_rating   REAL,
+    def_rating   REAL,
+    net_rating   REAL,
+    pace         REAL,
+    ts_pct       REAL,
+    fetched_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (team_id, season)
+);
+"""
+
 
 def ensure_tables() -> None:
     """Create tables + indexes if they don't already exist. No-op if they do."""
@@ -115,6 +130,7 @@ def ensure_tables() -> None:
         conn.execute(text(_CREATE_INDEXES))
         conn.execute(text(_CREATE_TEAMS))
         conn.execute(text(_ALTER_PLAYERS_TEAM_POSITION))
+        conn.execute(text(_CREATE_TEAM_ADV))
     print("✓ Tables verified")
 
 
@@ -417,6 +433,97 @@ def upsert_game_logs_bulk(df: pd.DataFrame, season: str) -> int:
 
     print(f"✓ Bulk upserted {len(rows)} game log rows ({season})")
     return len(rows)
+
+
+# ─── Team advanced stats ─────────────────────────────────────
+
+_UPSERT_TEAM_ADV_SQL = text("""
+    INSERT INTO team_advanced_stats
+        (team_id, season, games_played, off_rating, def_rating,
+         net_rating, pace, ts_pct, fetched_at)
+    VALUES
+        (:team_id, :season, :games_played, :off_rating, :def_rating,
+         :net_rating, :pace, :ts_pct, CURRENT_TIMESTAMP)
+    ON CONFLICT (team_id, season)
+    DO UPDATE SET
+        games_played = EXCLUDED.games_played,
+        off_rating   = EXCLUDED.off_rating,
+        def_rating   = EXCLUDED.def_rating,
+        net_rating   = EXCLUDED.net_rating,
+        pace         = EXCLUDED.pace,
+        ts_pct       = EXCLUDED.ts_pct,
+        fetched_at   = CURRENT_TIMESTAMP;
+""")
+
+
+def _opt_float(val):
+    return float(val) if pd.notna(val) else None
+
+
+def _opt_int(val):
+    return int(val) if pd.notna(val) else None
+
+
+def upsert_team_advanced_stats(df: pd.DataFrame, season: str) -> int:
+    """Upsert LeagueDashTeamStats Advanced rows for a season.
+
+    Expects columns TEAM_ID, GP, OFF_RATING, DEF_RATING, NET_RATING, PACE, TS_PCT.
+    """
+    if df.empty:
+        return 0
+
+    rows = []
+    for _, row in df.iterrows():
+        rows.append({
+            "team_id":      _opt_int(row.get("TEAM_ID")),
+            "season":       season,
+            "games_played": _opt_int(row.get("GP")),
+            "off_rating":   _opt_float(row.get("OFF_RATING")),
+            "def_rating":   _opt_float(row.get("DEF_RATING")),
+            "net_rating":   _opt_float(row.get("NET_RATING")),
+            "pace":         _opt_float(row.get("PACE")),
+            "ts_pct":       _opt_float(row.get("TS_PCT")),
+        })
+
+    with get_engine().begin() as conn:
+        conn.execute(_UPSERT_TEAM_ADV_SQL, rows)
+
+    print(f"✓ Upserted {len(rows)} team advanced stat rows ({season})")
+    return len(rows)
+
+
+def load_team_advanced_stats(season: str) -> pd.DataFrame:
+    """Load cached team advanced stats for a season."""
+    sql = text("""
+        SELECT team_id, season, games_played, off_rating, def_rating,
+               net_rating, pace, ts_pct, fetched_at
+        FROM team_advanced_stats
+        WHERE season = :season;
+    """)
+    with get_engine().begin() as conn:
+        return pd.read_sql(sql, conn, params={"season": season})
+
+
+def is_team_stats_fresh(season: str, max_age_hours: float = 20.0) -> bool:
+    """Return True if any team_advanced_stats row for season is within max_age_hours."""
+    sql = text("""
+        SELECT MAX(fetched_at)
+        FROM team_advanced_stats
+        WHERE season = :season;
+    """)
+    with get_engine().begin() as conn:
+        row = conn.execute(sql, {"season": season}).fetchone()
+
+    if row is None or row[0] is None:
+        return False
+
+    last_fetch = row[0]
+    if last_fetch.tzinfo is None:
+        cutoff = datetime.now() - timedelta(hours=max_age_hours)
+    else:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+
+    return last_fetch >= cutoff
 
 
 # ─── Quick sanity test ────────────────────────────────────────

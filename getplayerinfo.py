@@ -65,18 +65,57 @@ def _minutes_to_float(value) -> float:
 
 
 def clean_player_games(raw_df: pd.DataFrame) -> pd.DataFrame:
-    """Keep required columns and normalize datatypes."""
-    keep_cols = ["GAME_DATE", "MATCHUP", "MIN", "PTS", "REB", "AST"]
+    """Keep raw stat columns and derive shooting percentages.
+
+    Returns base box-score columns plus FG_PCT, FG3_PCT, FT_PCT, TS_PCT.
+    Extra columns are kept only if present (cached rows may pre-date a column).
+    """
+    base_cols = ["GAME_DATE", "MATCHUP", "MIN", "PTS", "REB", "AST"]
+    extra_cols = [
+        "WL", "FGM", "FGA", "FG3M", "FG3A", "FTM", "FTA",
+        "STL", "BLK", "TOV", "PLUS_MINUS",
+    ]
+    keep_cols = base_cols + [c for c in extra_cols if c in raw_df.columns]
     df = raw_df[keep_cols].copy()
 
     df["GAME_DATE"] = pd.to_datetime(df["GAME_DATE"])
     df = df.sort_values("GAME_DATE").reset_index(drop=True)
 
     df["MIN"] = df["MIN"].apply(_minutes_to_float)
-    for col in ["PTS", "REB", "AST"]:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
+    numeric_cols = [
+        "PTS", "REB", "AST", "FGM", "FGA", "FG3M", "FG3A",
+        "FTM", "FTA", "STL", "BLK", "TOV", "PLUS_MINUS",
+    ]
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    if {"FGM", "FGA"}.issubset(df.columns):
+        df["FG_PCT"] = df["FGM"] / df["FGA"].replace(0, np.nan)
+    if {"FG3M", "FG3A"}.issubset(df.columns):
+        df["FG3_PCT"] = df["FG3M"] / df["FG3A"].replace(0, np.nan)
+    if {"FTM", "FTA"}.issubset(df.columns):
+        df["FT_PCT"] = df["FTM"] / df["FTA"].replace(0, np.nan)
+    if {"PTS", "FGA", "FTA"}.issubset(df.columns):
+        denom = 2.0 * (df["FGA"] + 0.44 * df["FTA"])
+        df["TS_PCT"] = df["PTS"] / denom.replace(0, np.nan)
 
     return df
+
+
+def parse_opponent_from_matchup(matchup: str) -> str | None:
+    """Extract opponent abbreviation from MATCHUP string.
+
+    'LAL vs. BOS' -> 'BOS'; 'BOS @ LAL' -> 'LAL'.
+    Returns None for malformed input.
+    """
+    if not isinstance(matchup, str) or not matchup:
+        return None
+    normalized = matchup.replace("vs.", "@")
+    parts = normalized.split("@")
+    if len(parts) < 2:
+        return None
+    return parts[-1].strip() or None
 
 
 def load_all_players_to_db(active_only: bool = True) -> int:
