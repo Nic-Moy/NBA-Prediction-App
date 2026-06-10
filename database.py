@@ -32,16 +32,26 @@ DB_CONFIG = {
 _engine = None  # module-level singleton
 
 
+def _build_conn_str() -> str:
+    """Prefer DATABASE_URL (Render/Neon); fall back to local DB_CONFIG."""
+    url = os.getenv("DATABASE_URL")
+    if url:
+        # SQLAlchemy wants the postgresql:// scheme, not legacy postgres://.
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql://", 1)
+        return url
+    c = DB_CONFIG
+    return (
+        f"postgresql://{c['user']}:{c['password']}"
+        f"@{c['host']}:{c['port']}/{c['database']}"
+    )
+
+
 def get_engine():
     """Return a shared SQLAlchemy engine (created once)."""
     global _engine
     if _engine is None:
-        c = DB_CONFIG
-        conn_str = (
-            f"postgresql://{c['user']}:{c['password']}"
-            f"@{c['host']}:{c['port']}/{c['database']}"
-        )
-        _engine = create_engine(conn_str, pool_pre_ping=True)
+        _engine = create_engine(_build_conn_str(), pool_pre_ping=True)
     return _engine
 
 
