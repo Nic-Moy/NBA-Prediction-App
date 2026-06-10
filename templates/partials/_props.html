@@ -1,0 +1,69 @@
+{% if error %}
+  <div class="rounded-xl border border-under/40 bg-under/5 p-6 text-center">
+    <p class="font-display font-bold text-under text-lg mb-1">Couldn't load props</p>
+    <p class="font-mono text-xs text-muted break-words">{{ error }}</p>
+  </div>
+
+{% elif count == 0 %}
+  <div class="rounded-xl border border-edge bg-panel/40 p-10 text-center">
+    <p class="font-display font-bold text-xl mb-1">No props match</p>
+    <p class="font-mono text-xs text-muted">Loosen your filters or hit refresh.</p>
+  </div>
+
+{% else %}
+  <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+    {% for p in props %}
+    {% set tcolor = {"demon": "under", "goblin": "over"}.get(p.tier, "gold") %}
+    <article
+      class="card-rise group relative rounded-xl border border-edge bg-panel/60 p-4 flex flex-col gap-3 hover:border-gold/40 hover:bg-panel transition-all duration-200 overflow-hidden"
+      style="animation-delay: {{ (loop.index0 % 12) * 35 }}ms">
+
+      <!-- corner glow on hover -->
+      <div class="pointer-events-none absolute -top-12 -right-12 w-28 h-28 rounded-full bg-gold/10 blur-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
+
+      <!-- top row: player + tier -->
+      <div class="flex items-start justify-between gap-2">
+        <div class="min-w-0">
+          <h3 class="font-display font-bold text-[1.05rem] leading-tight truncate">{{ p.player_name }}</h3>
+          <p class="font-mono text-[11px] text-muted mt-0.5 truncate">
+            {{ p.team }}{% if p.position %} · {{ p.position }}{% endif %}
+          </p>
+        </div>
+        <span class="shrink-0 font-mono text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full border border-{{ tcolor }}/40 text-{{ tcolor }} bg-{{ tcolor }}/5">
+          {{ p.tier }}
+        </span>
+      </div>
+
+      <!-- line -->
+      <div class="flex items-end justify-between mt-auto">
+        <div>
+          <span class="font-mono text-3xl font-bold tabular-nums tracking-tight">
+            {{ "%.1f"|format(p.line) if p.line is not none else "—" }}
+          </span>
+          <p class="font-body text-xs text-muted mt-0.5">{{ p.stat_type }}</p>
+        </div>
+        <button type="button"
+          data-project-player="{{ p.player_name }}"
+          class="font-mono text-[11px] uppercase tracking-wider text-muted hover:text-gold flex items-center gap-1 transition-colors">
+          Project
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </button>
+      </div>
+
+      <!-- footer: time / status -->
+      <div class="flex items-center justify-between pt-2 border-t border-edge/60">
+        <span class="font-mono text-[10px] text-muted">{{ p.start_time }}</span>
+        {% if p.status %}
+        <span class="font-mono text-[10px] text-muted uppercase tracking-wider">{{ p.status }}</span>
+        {% endif %}
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+{% endif %}
+
+<script>
+  document.body.dispatchEvent(new CustomEvent("props:count", {
+    detail: { count: {{ count }}, time: "{{ fetched_at }}" }
+  }));
+</script>

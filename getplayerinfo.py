@@ -71,11 +71,12 @@ def clean_player_games(raw_df: pd.DataFrame) -> pd.DataFrame:
     Extra columns are kept only if present (cached rows may pre-date a column).
     """
     base_cols = ["GAME_DATE", "MATCHUP", "MIN", "PTS", "REB", "AST"]
+    id_cols = [c for c in ["Game_ID", "GAME_ID"] if c in raw_df.columns]
     extra_cols = [
         "WL", "FGM", "FGA", "FG3M", "FG3A", "FTM", "FTA",
         "STL", "BLK", "TOV", "PLUS_MINUS",
     ]
-    keep_cols = base_cols + [c for c in extra_cols if c in raw_df.columns]
+    keep_cols = id_cols + base_cols + [c for c in extra_cols if c in raw_df.columns]
     df = raw_df[keep_cols].copy()
 
     df["GAME_DATE"] = pd.to_datetime(df["GAME_DATE"])

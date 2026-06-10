@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PROPSDESK — NBA props terminal</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind + HTMX -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink:    "#100f0d",
+            panel:  "#181714",
+            panel2: "#201e19",
+            edge:   "rgba(255,255,255,0.08)",
+            text:   "#ece8e1",
+            muted:  "#8f897e",
+            gold:   "#f3b13b",
+            over:   "#5fd38a",
+            under:  "#ff6b6b",
+          },
+          fontFamily: {
+            display: ['"Bricolage Grotesque"', "sans-serif"],
+            body:    ['"Instrument Sans"', "sans-serif"],
+            mono:    ['"JetBrains Mono"', "monospace"],
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      background-color: #100f0d;
+      background-image:
+        radial-gradient(1200px 600px at 85% -10%, rgba(243,177,59,0.10), transparent 60%),
+        radial-gradient(900px 500px at -10% 110%, rgba(95,211,138,0.06), transparent 55%),
+        linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 44px 44px, 44px 44px;
+    }
+    /* grain overlay */
+    body::before {
+      content: "";
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      opacity: 0.05; mix-blend-mode: overlay;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+    .htmx-indicator { opacity: 0; transition: opacity .2s ease; }
+    .htmx-request .htmx-indicator { opacity: 1; }
+    .htmx-request.htmx-indicator { opacity: 1; }
+
+    /* filter chips */
+    .chip { cursor: pointer; user-select: none; }
+    .chip input { position: absolute; opacity: 0; pointer-events: none; }
+    .chip span {
+      display: inline-block; padding: .3rem .7rem; border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.12); color: #8f897e;
+      font-size: .72rem; letter-spacing: .03em; text-transform: uppercase;
+      transition: all .15s ease; white-space: nowrap;
+    }
+    .chip:hover span { border-color: rgba(243,177,59,0.5); color: #ece8e1; }
+    .chip input:checked + span {
+      background: #f3b13b; border-color: #f3b13b; color: #100f0d; font-weight: 600;
+    }
+
+    /* card entrance */
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .card-rise { animation: rise .45s cubic-bezier(.2,.7,.2,1) both; }
+
+    input::placeholder { color: #6b665d; }
+    ::selection { background: #f3b13b; color: #100f0d; }
+
+    /* thin scrollbar */
+    *::-webkit-scrollbar { width: 8px; height: 8px; }
+    *::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 8px; }
+  </style>
+</head>
+
+<body class="font-body text-text antialiased min-h-screen relative">
+  <div class="relative z-10">
+
+    <!-- ===================== HEADER ===================== -->
+    <header class="sticky top-0 z-30 border-b border-edge backdrop-blur-md bg-ink/80">
+      <div class="max-w-[1500px] mx-auto px-5 sm:px-8 py-4 flex items-center justify-between gap-4">
+        <div class="flex items-baseline gap-3">
+          <span class="font-display font-extrabold tracking-tight text-2xl sm:text-3xl leading-none">
+            PROPS<span class="text-gold">/</span>DESK
+          </span>
+          <span class="hidden sm:inline font-mono text-[11px] text-muted uppercase tracking-[0.25em] pb-0.5">
+            line terminal
+          </span>
+        </div>
+
+        <div class="flex items-center gap-4">
+          <span id="prop-count" class="font-mono text-xs text-muted hidden sm:inline">—</span>
+          <button
+            type="button"
+            hx-get="/api/props"
+            hx-target="#props"
+            hx-include="#filters, #league-select"
+            hx-vals='{"refresh": 1}'
+            hx-indicator="#load-bar"
+            class="group flex items-center gap-2 rounded-md border border-edge px-3 py-1.5 text-xs font-mono uppercase tracking-wider text-muted hover:text-gold hover:border-gold/50 transition-colors">
+            <svg class="w-3.5 h-3.5 group-active:rotate-180 transition-transform duration-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>
+            Refresh
+          </button>
+        </div>
+      </div>
+      <!-- top loading bar -->
+      <div id="load-bar" class="htmx-indicator h-0.5 bg-gradient-to-r from-transparent via-gold to-transparent"></div>
+    </header>
+
+    <!-- ===================== BODY ===================== -->
+    <main class="max-w-[1500px] mx-auto px-5 sm:px-8 py-6 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 items-start">
+
+      <!-- ---------- LEFT: filters + props ---------- -->
+      <!-- min-w-0 lets the 1fr grid track shrink so the scrollable chip row
+           stays contained instead of blowing out the two-column layout. -->
+      <section class="min-w-0">
+        <!-- filter rail -->
+        <div class="mb-6 rounded-xl border border-edge bg-panel/60 p-4 flex flex-wrap items-center gap-x-5 gap-y-3">
+
+          <!-- league (outside the props form: a switch reloads chips, which then
+               re-fetches props — avoids a stale-stats race) -->
+          <label class="flex items-center gap-2">
+            <span class="font-mono text-[11px] uppercase tracking-wider text-muted">League</span>
+            <select id="league-select" name="league" class="bg-panel2 border border-edge rounded-md px-2.5 py-1.5 text-sm font-mono text-text focus:outline-none focus:border-gold/60">
+              {% for lg in leagues %}
+              <option value="{{ lg }}" {% if lg == default_league %}selected{% endif %}>{{ lg }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <!-- props form (display:contents so its fields flow into the rail's flex) -->
+          <form
+            id="filters"
+            hx-get="/api/props"
+            hx-target="#props"
+            hx-include="#league-select"
+            hx-indicator="#load-bar"
+            hx-trigger="change, keyup changed delay:350ms from:#player-search, propsReload from:body"
+            class="contents">
+
+            <!-- player search -->
+            <label class="flex items-center gap-2 flex-1 min-w-[180px]">
+              <svg class="w-4 h-4 text-muted shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+              <input
+                id="player-search" name="player" type="text" autocomplete="off"
+                placeholder="Search player…"
+                class="w-full bg-transparent text-sm focus:outline-none placeholder:text-muted/70" />
+            </label>
+
+            <!-- tier chips -->
+            <div class="flex flex-wrap items-center gap-1.5">
+              {% for t in ["standard", "demon", "goblin"] %}
+              <label class="chip"><input type="checkbox" name="tier" value="{{ t }}"><span>{{ t }}</span></label>
+              {% endfor %}
+            </div>
+
+            <!-- stat chips: league-driven, scrollable, single-select.
+                 Self-loads on page load and whenever the league changes. -->
+            <div id="stat-chips"
+              hx-get="/api/stats"
+              hx-include="#league-select"
+              hx-target="this"
+              hx-swap="innerHTML"
+              hx-trigger="load, change from:#league-select"
+              class="basis-full min-w-0 flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-1">
+              <span class="font-mono text-[11px] text-muted">Loading markets…</span>
+            </div>
+          </form>
+        </div>
+
+        <!-- props grid target -->
+        <div id="props" class="min-h-[300px]">
+          <!-- skeleton shown until first load resolves -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+            {% for i in range(6) %}
+            <div class="rounded-xl border border-edge bg-panel/40 h-[150px] animate-pulse"></div>
+            {% endfor %}
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- RIGHT: prediction console ---------- -->
+      <aside class="lg:sticky lg:top-24">
+        <div class="rounded-xl border border-edge bg-panel/70 overflow-hidden">
+          <div class="px-5 py-4 border-b border-edge flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-gold animate-pulse"></span>
+            <h2 class="font-display font-bold text-lg leading-none">Model Console</h2>
+          </div>
+
+          <form
+            id="predict-form"
+            hx-get="/api/predict"
+            hx-target="#prediction-result"
+            hx-indicator="#predict-spin"
+            class="p-5 space-y-3">
+
+            <div>
+              <label class="font-mono text-[11px] uppercase tracking-wider text-muted">Player</label>
+              <input id="predict-player" name="player" type="text" autocomplete="off"
+                placeholder="e.g. Stephen Curry"
+                class="mt-1 w-full bg-panel2 border border-edge rounded-md px-3 py-2 text-sm focus:outline-none focus:border-gold/60" />
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="font-mono text-[11px] uppercase tracking-wider text-muted">Opponent</label>
+                <input name="opponent" type="text" autocomplete="off" maxlength="4"
+                  placeholder="BOS"
+                  class="mt-1 w-full bg-panel2 border border-edge rounded-md px-3 py-2 text-sm uppercase font-mono focus:outline-none focus:border-gold/60" />
+              </div>
+              <div>
+                <label class="font-mono text-[11px] uppercase tracking-wider text-muted">Stat</label>
+                <select name="stat" class="mt-1 w-full bg-panel2 border border-edge rounded-md px-3 py-2 text-sm focus:outline-none focus:border-gold/60">
+                  {% for col, meta in predict_stats.items() %}
+                  <option value="{{ col }}">{{ meta[0] }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+
+            <button type="submit"
+              class="w-full mt-1 rounded-md bg-gold text-ink font-display font-bold py-2.5 text-sm uppercase tracking-wide hover:brightness-110 active:scale-[.99] transition flex items-center justify-center gap-2">
+              <span id="predict-spin" class="htmx-indicator">
+                <svg class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.22-8.56"/></svg>
+              </span>
+              Run Projection
+            </button>
+          </form>
+
+          <div id="prediction-result" class="px-5 pb-5">
+            <p class="text-sm text-muted font-mono leading-relaxed">
+              Enter a player and hit <span class="text-gold">Run Projection</span> to
+              compare the model's next-game forecast against the live PrizePicks line.
+            </p>
+          </div>
+        </div>
+
+        <p class="mt-3 px-1 font-mono text-[10px] leading-relaxed text-muted/70">
+          Projections come from an expanding-window Ridge model over cached game logs.
+          Not betting advice — for analysis only.
+        </p>
+      </aside>
+    </main>
+
+    <footer class="max-w-[1500px] mx-auto px-5 sm:px-8 py-8 mt-6 border-t border-edge">
+      <p class="font-mono text-[11px] text-muted/70 uppercase tracking-[0.2em]">
+        PROPSDESK · NBA props model · {{ default_league }}
+      </p>
+    </footer>
+  </div>
+
+  <script>
+    // Stat chips act single-select: checking one clears the others.
+    // (Clicking the active chip again unchecks it -> back to all stats.)
+    const statChips = document.getElementById("stat-chips");
+    if (statChips) {
+      statChips.addEventListener("change", function (e) {
+        const box = e.target;
+        if (box.type !== "checkbox" || !box.checked) return;
+        statChips.querySelectorAll('input[type="checkbox"]').forEach(function (other) {
+          if (other !== box) other.checked = false; // programmatic = no extra change event
+        });
+      });
+    }
+
+    // "Project →" buttons in cards push the player into the console.
+    document.body.addEventListener("click", function (e) {
+      const btn = e.target.closest("[data-project-player]");
+      if (!btn) return;
+      const input = document.getElementById("predict-player");
+      input.value = btn.getAttribute("data-project-player");
+      input.scrollIntoView({ behavior: "smooth", block: "center" });
+      input.focus();
+    });
+    // live prop count in header, emitted by the props partial
+    document.body.addEventListener("props:count", function (e) {
+      document.getElementById("prop-count").textContent =
+        e.detail.count + " lines · " + e.detail.time;
+    });
+  </script>
+</body>
+</html>

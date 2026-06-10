@@ -25,6 +25,7 @@ Importable convenience functions:
 from __future__ import annotations
 
 import argparse
+import time
 from typing import Iterable, List, Optional, Union
 
 import pandas as pd
@@ -68,18 +69,27 @@ STAT_ALIASES: dict[str, str] = {
 NBA_DEFAULT_STATS = ["Points", "Rebounds", "Assists", "Pts+Rebs+Asts", "Pts+Rebs", "Pts+Asts"]
 
 _HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    ),
     "Accept": "application/json",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Origin": "https://app.prizepicks.com",
     "Referer": "https://app.prizepicks.com/",
 }
+
+# Browser fingerprints to rotate through on retry — PrizePicks fronts its API with
+# PerimeterX/HUMAN bot protection that intermittently 403s a given fingerprint.
+_IMPERSONATE_TARGETS = ("chrome124", "chrome120", "safari17_0", "chrome131")
 
 
 class PrizePicksError(RuntimeError):
     """Raised when a PrizePicks API request fails."""
+
+
+def _is_bot_block(status_code: int, body: str) -> bool:
+    """True when a response looks like a PerimeterX/captcha bot challenge."""
+    if status_code in (403, 429):
+        return True
+    low = body.lower()
+    return "captcha" in low or "px-cloud" in low or "blockscript" in low
 
 
 def _resolve_league_id(league: Union[str, int]) -> int:
@@ -110,12 +120,30 @@ def fetch_projections(
     league_id = _resolve_league_id(league)
     url = f"{BASE_URL}/projections"
     params = {"league_id": league_id, "per_page": per_page}
-    response = requests.get(url, params=params, headers=_HEADERS, timeout=20, impersonate="chrome120")
-    if not response.ok:
-        raise PrizePicksError(
-            f"PrizePicks request failed ({response.status_code}): {response.text.strip()}"
+
+    last_status = None
+    for attempt, target in enumerate(_IMPERSONATE_TARGETS):
+        response = requests.get(
+            url, params=params, headers=_HEADERS, timeout=20, impersonate=target
         )
-    return response.json()
+        if response.ok:
+            return response.json()
+
+        last_status = response.status_code
+        # Only retry bot-challenge responses; fail fast on real errors (e.g. 404).
+        if not _is_bot_block(response.status_code, response.text):
+            raise PrizePicksError(
+                f"PrizePicks request failed ({response.status_code}): "
+                f"{response.text.strip()}"
+            )
+        # Back off briefly before trying the next fingerprint.
+        if attempt < len(_IMPERSONATE_TARGETS) - 1:
+            time.sleep(0.6 * (attempt + 1))
+
+    raise PrizePicksError(
+        f"PrizePicks blocked the request ({last_status}) — bot protection "
+        f"(PerimeterX/captcha). Wait a moment and try again."
+    )
 
 
 def parse_projections(raw: dict) -> pd.DataFrame:

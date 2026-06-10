@@ -1,0 +1,7 @@
+{% if stats %}
+  {% for s in stats %}
+  <label class="chip"><input type="checkbox" name="stats" value="{{ s }}"><span>{{ s }}</span></label>
+  {% endfor %}
+{% else %}
+  <span class="font-mono text-[11px] text-muted">No markets</span>
+{% endif %}

@@ -5,11 +5,13 @@ from model import (
     walk_forward_backtest,
     walk_forward_regression,
     print_player_summary,
-    print_feature_preview,
     evaluate_results,
     evaluate_regression_results,
     predict_next_game,
-    DEFAULT_LOOKBACK_GAMES,
+    print_opponent_feature_diagnostics,
+    compute_permutation_importance,
+    plot_permutation_importance,
+    DEFAULT_MIN_TRAIN_SIZE,
 )
 from getprizepicks import get_nba_props
 
@@ -38,16 +40,20 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     clean_df = clean_player_games(raw_df)
-    feature_df = build_features(clean_df)
+    feature_df = build_features(clean_df, season=season)
 
     print_player_summary(clean_df, player_name)
-    print_feature_preview(feature_df)
+    print_opponent_feature_diagnostics(feature_df, min_train_size=DEFAULT_MIN_TRAIN_SIZE)
 
-    results_df = walk_forward_backtest(feature_df, lookback_games=DEFAULT_LOOKBACK_GAMES)
+    results_df = walk_forward_backtest(feature_df, min_train_size=DEFAULT_MIN_TRAIN_SIZE)
     evaluate_results(results_df)
 
+    # --- Permutation importance: which features actually help prediction ---
+    importance_df = compute_permutation_importance(feature_df)
+    plot_permutation_importance(importance_df)
+
     # --- Regression backtest (predicts actual stat value, no proxy line needed) ---
-    reg_df = walk_forward_regression(feature_df, stat_col="PTS", lookback_games=DEFAULT_LOOKBACK_GAMES)
+    reg_df = walk_forward_regression(feature_df, stat_col="PTS", min_train_size=DEFAULT_MIN_TRAIN_SIZE)
     evaluate_regression_results(reg_df, stat_col="PTS")
 
     # --- Next-game prediction vs real PrizePicks line ---
@@ -55,7 +61,16 @@ if __name__ == "__main__":
     print("NEXT GAME PREDICTION")
     print(f"{'=' * 60}")
 
-    prediction = predict_next_game(feature_df, stat_col="PTS", lookback_games=DEFAULT_LOOKBACK_GAMES)
+    next_opp_input = input("Enter next opponent abbreviation (ex: BOS, optional): ").strip().upper()
+    next_opponent_abbrev = next_opp_input or None
+
+    prediction = predict_next_game(
+        feature_df,
+        stat_col="PTS",
+        min_train_size=DEFAULT_MIN_TRAIN_SIZE,
+        next_opponent_abbrev=next_opponent_abbrev,
+        season=season,
+    )
 
     if prediction["predicted"] is None:
         print("Not enough data to predict next game.")

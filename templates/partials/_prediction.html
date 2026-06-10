@@ -1,0 +1,62 @@
+{% if state == "empty" %}
+  <p class="text-sm text-muted font-mono">{{ message }}</p>
+
+{% elif state == "error" %}
+  <div class="card-rise rounded-lg border border-under/40 bg-under/5 p-4">
+    <p class="font-display font-bold text-under text-sm mb-1">Can't project</p>
+    <p class="font-mono text-xs text-muted leading-relaxed">{{ message }}</p>
+  </div>
+
+{% else %}
+  {% set dir_color = "over" if (rec and rec.direction == "OVER") else "under" %}
+  <div class="card-rise space-y-4">
+
+    <!-- header line -->
+    <div class="flex items-baseline justify-between">
+      <span class="font-display font-bold">{{ player }}</span>
+      <span class="font-mono text-[11px] uppercase tracking-wider text-muted">
+        {{ label }}{% if opponent %} vs {{ opponent }}{% endif %}
+      </span>
+    </div>
+
+    <!-- model prediction -->
+    <div class="rounded-lg border border-edge bg-panel2/60 p-4 text-center">
+      <p class="font-mono text-[10px] uppercase tracking-[0.2em] text-muted mb-1">Model forecast</p>
+      <div class="font-mono font-bold tabular-nums leading-none">
+        <span class="text-4xl">{{ "%.1f"|format(predicted) }}</span>
+        {% if moe is not none %}
+        <span class="text-base text-muted">± {{ "%.1f"|format(moe) }}</span>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if rec %}
+    <!-- recommendation -->
+    <div class="rounded-lg border border-{{ dir_color }}/40 bg-{{ dir_color }}/5 p-4">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <p class="font-mono text-[10px] uppercase tracking-[0.2em] text-muted">PrizePicks line</p>
+          <p class="font-mono text-xl font-bold tabular-nums">{{ "%.1f"|format(line) }}</p>
+        </div>
+        <div class="text-right">
+          <p class="font-display font-extrabold text-2xl text-{{ dir_color }} leading-none">{{ rec.direction }}</p>
+          <p class="font-mono text-[11px] text-muted mt-1">
+            {{ "%+.1f"|format(rec.margin) }} margin · {{ rec.confidence }}
+          </p>
+        </div>
+      </div>
+
+      <!-- margin gauge -->
+      <div class="h-1.5 rounded-full bg-edge overflow-hidden">
+        <div class="h-full bg-{{ dir_color }} rounded-full transition-all duration-500"
+             style="width: {{ [rec.abs_margin / 8 * 100, 100]|min }}%"></div>
+      </div>
+    </div>
+    {% elif line_note %}
+    <div class="rounded-lg border border-edge bg-panel2/40 p-3">
+      <p class="font-mono text-xs text-muted leading-relaxed">{{ line_note }}</p>
+    </div>
+    {% endif %}
+
+  </div>
+{% endif %}

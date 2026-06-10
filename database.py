@@ -120,6 +120,27 @@ CREATE TABLE IF NOT EXISTS team_advanced_stats (
 );
 """
 
+_CREATE_TEAM_GAME_ADV = """
+CREATE TABLE IF NOT EXISTS team_game_advanced_stats (
+    game_id            VARCHAR(20)  NOT NULL,
+    team_id            INTEGER      NOT NULL,
+    season             VARCHAR(10)  NOT NULL,
+    game_date          DATE,
+    team_abbreviation  VARCHAR(5),
+    off_rating         REAL,
+    def_rating         REAL,
+    net_rating         REAL,
+    pace               REAL,
+    ts_pct             REAL,
+    fetched_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (game_id, team_id)
+);
+CREATE INDEX IF NOT EXISTS idx_team_game_adv_season
+    ON team_game_advanced_stats (season);
+CREATE INDEX IF NOT EXISTS idx_team_game_adv_team_date
+    ON team_game_advanced_stats (team_abbreviation, game_date);
+"""
+
 
 def ensure_tables() -> None:
     """Create tables + indexes if they don't already exist. No-op if they do."""
@@ -131,6 +152,7 @@ def ensure_tables() -> None:
         conn.execute(text(_CREATE_TEAMS))
         conn.execute(text(_ALTER_PLAYERS_TEAM_POSITION))
         conn.execute(text(_CREATE_TEAM_ADV))
+        conn.execute(text(_CREATE_TEAM_GAME_ADV))
     print("✓ Tables verified")
 
 
@@ -455,6 +477,26 @@ _UPSERT_TEAM_ADV_SQL = text("""
         fetched_at   = CURRENT_TIMESTAMP;
 """)
 
+_UPSERT_TEAM_GAME_ADV_SQL = text("""
+    INSERT INTO team_game_advanced_stats
+        (game_id, team_id, season, game_date, team_abbreviation,
+         off_rating, def_rating, net_rating, pace, ts_pct, fetched_at)
+    VALUES
+        (:game_id, :team_id, :season, :game_date, :team_abbreviation,
+         :off_rating, :def_rating, :net_rating, :pace, :ts_pct, CURRENT_TIMESTAMP)
+    ON CONFLICT (game_id, team_id)
+    DO UPDATE SET
+        season            = EXCLUDED.season,
+        game_date         = EXCLUDED.game_date,
+        team_abbreviation = EXCLUDED.team_abbreviation,
+        off_rating        = EXCLUDED.off_rating,
+        def_rating        = EXCLUDED.def_rating,
+        net_rating        = EXCLUDED.net_rating,
+        pace              = EXCLUDED.pace,
+        ts_pct            = EXCLUDED.ts_pct,
+        fetched_at        = CURRENT_TIMESTAMP;
+""")
+
 
 def _opt_float(val):
     return float(val) if pd.notna(val) else None
@@ -462,6 +504,14 @@ def _opt_float(val):
 
 def _opt_int(val):
     return int(val) if pd.notna(val) else None
+
+
+def _first_present(row, *keys):
+    """Return the first non-null value present in row for any key."""
+    for key in keys:
+        if key in row and pd.notna(row.get(key)):
+            return row.get(key)
+    return None
 
 
 def upsert_team_advanced_stats(df: pd.DataFrame, season: str) -> int:
@@ -502,6 +552,119 @@ def load_team_advanced_stats(season: str) -> pd.DataFrame:
     """)
     with get_engine().begin() as conn:
         return pd.read_sql(sql, conn, params={"season": season})
+
+
+def upsert_team_game_advanced_stats(
+    df: pd.DataFrame,
+    season: str,
+    game_date=None,
+) -> int:
+    """Upsert BoxScoreAdvanced TeamStats rows for one game (V2 or V3 schema)."""
+    if df.empty:
+        return 0
+
+    rows = []
+    for _, row in df.iterrows():
+        game_id_val = _first_present(row, "GAME_ID", "gameId")
+        team_id_val = _first_present(row, "TEAM_ID", "teamId")
+        if game_id_val is None or team_id_val is None:
+            continue
+
+        rows.append({
+            "game_id":            str(game_id_val),
+            "team_id":            _opt_int(team_id_val),
+            "season":             season,
+            "game_date":          pd.to_datetime(game_date).date() if pd.notna(game_date) else None,
+            "team_abbreviation":  _first_present(row, "TEAM_ABBREVIATION", "teamTricode"),
+            "off_rating":         _opt_float(_first_present(row, "OFF_RATING", "offensiveRating")),
+            "def_rating":         _opt_float(_first_present(row, "DEF_RATING", "defensiveRating")),
+            "net_rating":         _opt_float(_first_present(row, "NET_RATING", "netRating")),
+            "pace":               _opt_float(_first_present(row, "PACE", "pace")),
+            "ts_pct":             _opt_float(_first_present(row, "TS_PCT", "trueShootingPercentage")),
+        })
+
+    if not rows:
+        return 0
+
+    with get_engine().begin() as conn:
+        conn.execute(_UPSERT_TEAM_GAME_ADV_SQL, rows)
+
+    return len(rows)
+
+
+def load_cached_game_ids_for_season(season: str) -> pd.DataFrame:
+    """Return distinct game_id/game_date pairs already cached for a season."""
+    sql = text("""
+        SELECT DISTINCT game_id, game_date
+        FROM player_game_logs
+        WHERE season = :season
+          AND game_id IS NOT NULL
+        ORDER BY game_date, game_id;
+    """)
+    with get_engine().begin() as conn:
+        return pd.read_sql(sql, conn, params={"season": season})
+
+
+def load_cached_team_game_ids_for_season(season: str) -> set[str]:
+    """Return game IDs already present in team_game_advanced_stats for season."""
+    sql = text("""
+        SELECT DISTINCT game_id
+        FROM team_game_advanced_stats
+        WHERE season = :season;
+    """)
+    with get_engine().begin() as conn:
+        rows = conn.execute(sql, {"season": season}).fetchall()
+    return {r[0] for r in rows if r[0]}
+
+
+def load_opponent_game_advanced_history_by_abbrev(season: str) -> dict[str, pd.DataFrame]:
+    """Return {abbrev: DataFrame(game_date, off_rating, def_rating, pace)} for a season."""
+    sql = text("""
+        SELECT team_abbreviation, game_date, off_rating, def_rating, pace
+        FROM team_game_advanced_stats
+        WHERE season = :season
+          AND team_abbreviation IS NOT NULL
+          AND game_date IS NOT NULL
+        ORDER BY team_abbreviation, game_date;
+    """)
+    with get_engine().begin() as conn:
+        df = pd.read_sql(sql, conn, params={"season": season})
+
+    if df.empty:
+        return {}
+
+    df["game_date"] = pd.to_datetime(df["game_date"])
+    history: dict[str, pd.DataFrame] = {}
+    for abbrev, part in df.groupby("team_abbreviation", sort=False):
+        history[str(abbrev)] = part.reset_index(drop=True)
+    return history
+
+
+def load_opponent_stats_by_abbrev(season: str) -> dict[str, dict[str, float]]:
+    """Return {team_abbreviation: {off_rating, def_rating, net_rating, pace, ts_pct}}.
+
+    Joins team_advanced_stats with teams so model.py can look up opponent context
+    directly from MATCHUP abbreviations.
+    """
+    sql = text("""
+        SELECT t.abbreviation, s.off_rating, s.def_rating, s.net_rating,
+               s.pace, s.ts_pct
+        FROM team_advanced_stats s
+        JOIN teams t ON t.team_id = s.team_id
+        WHERE s.season = :season;
+    """)
+    with get_engine().begin() as conn:
+        rows = conn.execute(sql, {"season": season}).fetchall()
+    return {
+        r[0]: {
+            "off_rating": r[1],
+            "def_rating": r[2],
+            "net_rating": r[3],
+            "pace":       r[4],
+            "ts_pct":     r[5],
+        }
+        for r in rows if r[0]
+    }
 
 
 def is_team_stats_fresh(season: str, max_age_hours: float = 20.0) -> bool:
