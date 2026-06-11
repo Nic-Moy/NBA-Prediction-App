@@ -1,0 +1,20 @@
+# Top-level deps only. Lock with: pip-compile requirements.in
+# Web app
+fastapi
+uvicorn[standard]
+jinja2
+# Database (Neon/Postgres)
+sqlalchemy
+psycopg2-binary
+# Data + model
+pandas
+numpy
+scikit-learn>=1.5
+xgboost
+# Data sources
+nba_api
+requests
+curl_cffi
+# Experiment tracking / artifacts
+mlflow
+pyarrow
