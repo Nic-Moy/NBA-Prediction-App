@@ -1,3 +1,18 @@
+"""Legacy standalone notebook-style exploration of NBA player game logs.
+
+Provides:
+- find_player_id() / get_player_stats() -> retrieves a player's NBA game logs.
+- isolate_key_stats() -> selects and cleans the core analysis columns.
+- calculate_and_display_averages(), analyze_correlations(), and
+  plot_relationships() -> print or visualize exploratory summaries.
+- rolling_avg_prediction(), regression_prediction(), and
+  evaluate_predictions() -> experiment with simple prediction approaches.
+
+No other project Python file imports this script; it is run directly for
+exploration. The current main flow uses the data retrieval and exploratory
+functions, while the prediction experiment calls remain commented out.
+"""
+
 import numpy as np
 import pandas as pd
 import requests

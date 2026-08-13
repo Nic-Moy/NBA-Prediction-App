@@ -1,8 +1,16 @@
-"""
-Fetch NBA player prop lines from The Odds API.
+"""Fetch NBA player-prop odds from The Odds API with quota-aware requests.
 
-This file is intentionally standalone so you can use it from the terminal now,
-and import the functions later into your model/backtesting scripts.
+Provides:
+- list_nba_events() -> gets upcoming NBA event IDs without consuming credits.
+- fetch_event_prop_odds() -> gets prop odds for one event.
+- normalize_prop_odds() -> flattens the event response into a DataFrame.
+- pair_over_under_rows() -> combines Over and Under prices for a prop line.
+- filter_player_rows() / find_player_props_across_events() -> finds a player's
+  available prop lines.
+
+This is currently a standalone command-line utility: no other project Python
+file imports it. Its functions are structured for future model or backtesting
+code to import without duplicating API and quota-handling logic.
 
 Key flow (quota-aware):
 1) GET /v4/sports/basketball_nba/events          -> free (0 credits)

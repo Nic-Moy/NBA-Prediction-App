@@ -1,3 +1,18 @@
+"""Interactive database setup workflow for the NBA props application.
+
+Loads the shared player and team reference data, season-level team advanced
+stats, player game logs, and per-game team advanced stats into Postgres. The
+user can choose either a complete league game-log load or one player's logs.
+
+Provides:
+- load_all_data_to_db() -> runs the complete cache-loading workflow.
+
+Uses: getplayerinfo.py for player, team, and game-log loaders, and
+      team_stats.py for team advanced-stat loaders.
+    
+Run this script directly before main.py or server.py since those scripts read the data this places in the database.
+"""
+
 from getplayerinfo import (
     DEFAULT_SEASON,
     load_all_players_to_db,
@@ -9,6 +24,11 @@ from team_stats import fetch_and_cache_team_stats, fetch_and_cache_team_game_adv
 
 
 def load_all_data_to_db(userchoice: int, season: str):
+    """Load all shared data plus either league-wide or one-player game logs.
+
+    Called by this file's interactive command-line flow. Its cached database
+    records are subsequently read by main.py and server.py.
+    """
     print("Loading players...")
     count = load_all_players_to_db(active_only=True)
     print(f"  {count} players loaded to players table.")
@@ -38,6 +58,7 @@ def load_all_data_to_db(userchoice: int, season: str):
 
 
 if __name__ == "__main__":
+    # Testing code for setup.py only
     choice = 0
     season_input = input(f"Enter season [{DEFAULT_SEASON}]: ").strip()
     season = season_input or DEFAULT_SEASON

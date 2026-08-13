@@ -1,3 +1,11 @@
+"""Run the terminal NBA player-prop analysis and next-game prediction flow.
+
+This script prompts for a player and season, reads that player's cached game
+logs, runs classification and regression backtests, then compares a next-game
+points prediction with the current PrizePicks line.
+
+"""
+
 from getplayerinfo import find_player_id, clean_player_games, DEFAULT_SEASON
 from database import load_cached_logs
 from model import (

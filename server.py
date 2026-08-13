@@ -1,12 +1,19 @@
-"""
-PROPSDESK — FastAPI + HTMX frontend for the NBA props model.
+"""Serve the PROPSDESK FastAPI and HTMX frontend for NBA prop exploration.
 
 Run with:
     uvicorn server:app --reload --port 8000
 
-Reuses the existing scraping/model stack unchanged:
-    getprizepicks.get_props / get_nba_props   -> live PrizePicks lines
-    getplayerinfo / database / model          -> next-game prediction
+Provides:
+- load_props() -> fetches and keeps a five-minute in-memory prop cache.
+- stats_for_league() -> returns the available stats for the selected league.
+- index() -> renders the application page.
+- api_stats() / api_props() -> render HTMX filtering partials.
+- api_predict() -> renders a prediction-versus-live-line partial.
+
+Run by Uvicorn as the web application's entry point; no project Python module imports server.py. 
+
+It uses getprizepicks.py for lines, getplayerinfo.py and
+database.py for cached player data, and model.py for predictions.
 """
 
 from __future__ import annotations

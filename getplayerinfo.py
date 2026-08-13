@@ -1,10 +1,19 @@
-"""
-NBA player info utilities.
+"""Fetch, clean, and cache NBA player, team, and player-game-log data.
 
-This module is intentionally focused on nba_api player data only:
-- resolve player name -> player ID
-- fetch raw game logs
-- clean game logs into modeling-friendly columns
+Provides:
+- find_player_id() -> resolves an exact NBA player name to its NBA ID.
+- get_player_stats() -> fetches one player's raw game logs from nba_api.
+- clean_player_games() -> prepares cached/raw logs for feature engineering.
+- parse_opponent_from_matchup() -> extracts an opponent abbreviation.
+- load_all_players_to_db() / load_all_teams_to_db() -> populates reference
+  tables.
+- load_player_game_logs() / load_all_game_logs_bulk() -> fetches and stores
+  one player's or the league's game logs.
+
+Used by: setup.py to populate Postgres; 
+         model.py for player lookup, game-log cleaning, and opponent parsing;
+         main.py and server.py for their player prediction flows. 
+It can also be run directly to preview a player's data.
 """
 
 

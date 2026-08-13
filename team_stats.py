@@ -1,8 +1,15 @@
-"""Team-level advanced stats fetch + cache layer.
+"""Fetch and cache season-level and game-level NBA team advanced statistics.
 
-Pulls OFF_RATING, DEF_RATING, NET_RATING, PACE, TS_PCT for all 30 teams in a
-season via LeagueDashTeamStats and upserts to the team_advanced_stats Postgres
-table. Used by model.py to attach opponent context features to game logs.
+Pulls OFF_RATING, DEF_RATING, NET_RATING, PACE, and TS_PCT from nba_api, then
+upserts the results to Postgres for use as opponent context.
+
+Provides:
+- fetch_and_cache_team_stats() -> stores one season's 30-team advanced stats.
+- fetch_and_cache_team_game_advanced_stats() -> backfills advanced stats for
+  each cached game, trying the V2 endpoint before the V3 fallback.
+
+Used by: setup.py to populate the database.
+         model.py then reads the cached team statistics through database.py when it builds opponent features.
 """
 
 from __future__ import annotations

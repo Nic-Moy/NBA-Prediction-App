@@ -1,13 +1,21 @@
-"""
-Learning version: NBA player prop classification (Over / Under points)
+"""Build NBA pre-game features, backtest player props, and project next games.
 
-What this script does:
-1. Fetch one player's game log from nba_api
-2. Build only PRE-GAME features (things you know before tipoff)
-3. Create a proxy betting line (previous 5-game average points)
-4. Train a Logistic Regression model in a walk-forward backtest
-5. Report accuracy vs betting break-even (52.4% for -110 odds)
+Provides:
+- build_features() -> creates leakage-safe rolling player and opponent features.
+- walk_forward_backtest() / evaluate_results() -> classify Over or Under
+  against a rolling proxy line and report the backtest.
+- walk_forward_regression() / evaluate_regression_results() -> predict a raw
+  stat value and report regression performance.
+- compute_permutation_importance() / plot_permutation_importance() -> show
+  which features contribute to the classifier.
+- predict_next_game() -> trains on available history and returns a next-game
+  stat prediction with a margin of error.
 
+Used by: main.py for the terminal analysis workflow 
+         server.py for the web prediction endpoint.
+
+Uses:    getplayerinfo.py to clean logs and parse opponents
+         database.py to load the cached opponent statistics
 """
 
 from __future__ import annotations

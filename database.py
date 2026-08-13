@@ -1,14 +1,21 @@
-"""
-database.py — Postgres cache layer for NBA player data.
+"""Postgres cache layer for NBA players, game logs, and team advanced stats.
 
 Provides:
-- get_engine()        → shared SQLAlchemy engine
-- ensure_tables()     → creates tables if they don't exist (safety net)
-- upsert_game_logs()  → insert/update player game logs (no duplicates)
-- load_cached_logs()  → read cached logs back as a DataFrame
-- is_cache_fresh()    → check if we need to re-fetch from nba_api
-- cache_player()      → store a player_id ↔ name mapping
-- lookup_player_id()  → resolve name → id from local cache
+- get_engine() -> creates and reuses the SQLAlchemy database connection.
+- ensure_tables() -> creates the player, game-log, team, and stats tables.
+- cache_player() / cache_team() -> upserts NBA reference data.
+- upsert_game_logs() / upsert_game_logs_bulk() -> saves player game logs.
+- load_cached_logs() -> returns saved logs in nba_api-compatible columns.
+- upsert_team_advanced_stats() / upsert_team_game_advanced_stats() -> saves
+  season-level and per-game team advanced statistics.
+- load_opponent_stats_by_abbrev() /
+  load_opponent_game_advanced_history_by_abbrev() -> returns opponent context
+  for model features.
+
+Used by: getplayerinfo.py and team_stats.py to populate the cache;
+         model.py to load opponent statistics;
+         main.py and server.py to read game logs.
+Running this file directly only verifies that the tables exist.
 """
 
 

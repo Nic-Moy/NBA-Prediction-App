@@ -1,5 +1,10 @@
-"""
-Fetch player prop lines from PrizePicks for any sport.
+"""Fetch and filter current PrizePicks player-prop lines for supported sports.
+
+Provides:
+- fetch_projections() -> requests raw PrizePicks projection data.
+- parse_projections() -> turns JSON:API data into a DataFrame.
+- get_props() -> returns filtered props for any supported league.
+- get_nba_props() -> NBA-specific wrapper with friendly stat aliases.
 
 NBA stat aliases:
     pts  -> Points
@@ -16,10 +21,9 @@ Key flow:
 2) Join `data` (projections) with `included` (player metadata) on player ID.
 3) Filter by stat type and/or player name as needed.
 
-Importable convenience functions:
-    from getprizepicks import get_props, get_nba_props
-    df = get_props("NHL", player="McDavid")
-    df = get_nba_props(stats=["pts", "pra"], player="LeBron")
+Used by main.py to compare a points prediction with a live line, and by
+server.py to display live props and compare prediction lines. It can also be
+run directly as a command-line prop browser.
 """
 
 from __future__ import annotations
